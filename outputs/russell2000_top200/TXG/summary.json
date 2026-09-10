@@ -1,0 +1,31 @@
+{
+  "symbol": "TXG",
+  "n_test_bars": 358,
+  "covered_bars": 196,
+  "n_windows": 4,
+  "cal_eta": 4.0,
+  "headline_bh": {
+    "ann_ret": 1.552845193652375,
+    "ann_vol": 0.6962875800951318,
+    "sharpe": 2.2301779294127497,
+    "max_dd": 0.334331366610629,
+    "pct_within": 0.0
+  },
+  "headline_hmm": {
+    "ann_ret": 1.277816140723951,
+    "ann_vol": 0.5543438789918803,
+    "sharpe": 2.3050965098555145,
+    "max_dd": 0.23160412743013709,
+    "pct_within": 0.1864406779661017
+  },
+  "p_hmm_beats_bh": 0.546,
+  "yearly": [
+    {
+      "year": 2026,
+      "n_days": 173,
+      "bh_sharpe": 2.716484923948037,
+      "hmm_sharpe": 2.710936441943828,
+      "hmm_max_dd": 0.23160412743013709
+    }
+  ]
+}

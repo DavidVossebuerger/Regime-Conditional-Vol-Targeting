@@ -1,0 +1,31 @@
+{
+  "symbol": "PECO",
+  "n_test_bars": 255,
+  "covered_bars": 120,
+  "n_windows": 3,
+  "cal_eta": 4.0,
+  "headline_bh": {
+    "ann_ret": 0.02753443379268988,
+    "ann_vol": 0.20293320768080714,
+    "sharpe": 0.1356822479049298,
+    "max_dd": 0.11486448379226985,
+    "pct_within": 1.0
+  },
+  "headline_hmm": {
+    "ann_ret": -0.004084744042698315,
+    "ann_vol": 0.1900433995120221,
+    "sharpe": -0.021493743288042558,
+    "max_dd": 0.11512249678113734,
+    "pct_within": 1.0
+  },
+  "p_hmm_beats_bh": 0.307,
+  "yearly": [
+    {
+      "year": 2026,
+      "n_days": 120,
+      "bh_sharpe": 0.1356822479049298,
+      "hmm_sharpe": -0.021493743288042558,
+      "hmm_max_dd": 0.11512249678113734
+    }
+  ]
+}

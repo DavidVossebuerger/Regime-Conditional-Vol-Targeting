@@ -189,14 +189,18 @@ python scripts/run_pipeline.py --assets BTC,ETH,ADA,BNB,DOGE,LINK,LTC,SOL,XRP
 
 Same HMM wc-feat pipeline, adapted for daily bars (`periods_per_year=252`).
 The LSE loader (`src/data_io/lse_loader.py`) fetches bars and caches them in
-`data/cache/`. **7 of 9 tested small caps beat Buy-and-Hold.** See
-`docs/equities-results.md`.
+`data/cache/`. **7 of 9 hand-picked small caps beat Buy-and-Hold; 138 of 177
+Russell 2000 components (78%) beat Buy-and-Hold.** See
+`docs/equities-results.md` and `docs/russell2000-results.md`.
 
 ```bash
 # 1) Set your key (one-time)
 cp .env.example .env  # then edit .env to set LSE_API_KEY=...
-# 2) Run
+# 2) Run hand-picked basket
 python src/equities_runner.py
+# 3) Or run Russell 2000 top-200 (provided CSV)
+python src/equities_runner.py --from-csv data/russell2000_top200.csv \
+    --output-dir outputs/russell2000_top200 --n-boot 500
 ```
 
 ### Multi-asset expected output (Run 2)

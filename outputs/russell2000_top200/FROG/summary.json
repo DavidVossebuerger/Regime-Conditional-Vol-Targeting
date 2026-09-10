@@ -1,0 +1,31 @@
+{
+  "symbol": "FROG",
+  "n_test_bars": 309,
+  "covered_bars": 164,
+  "n_windows": 4,
+  "cal_eta": 0.25,
+  "headline_bh": {
+    "ann_ret": 0.694111834321968,
+    "ann_vol": 0.8415441163355075,
+    "sharpe": 0.8248074234592342,
+    "max_dd": 0.5460909240128088,
+    "pct_within": 0.0
+  },
+  "headline_hmm": {
+    "ann_ret": 0.7401902489455604,
+    "ann_vol": 0.5128528915593852,
+    "sharpe": 1.4432798588595868,
+    "max_dd": 0.16563522552545207,
+    "pct_within": 0.3724137931034483
+  },
+  "p_hmm_beats_bh": 0.586,
+  "yearly": [
+    {
+      "year": 2026,
+      "n_days": 164,
+      "bh_sharpe": 0.8248074234592342,
+      "hmm_sharpe": 1.4432798588595868,
+      "hmm_max_dd": 0.16563522552545207
+    }
+  ]
+}

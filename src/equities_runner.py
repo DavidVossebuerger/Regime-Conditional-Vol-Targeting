@@ -354,11 +354,29 @@ def run_one_symbol(symbol: str, OUT_DIR: Path):
 
 
 def main():
+    import time as _time
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=",".join(EQUITY_UNIVERSE))
     ap.add_argument("--output-dir", default="outputs/equities")
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--from-csv", default=None,
+                    help="Load symbols from a CSV (column 'ticker'). Used for Russell 2000 batches.")
+    ap.add_argument("--n-boot", type=int, default=N_BOOT)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="Process only first N symbols (debugging)")
     args = ap.parse_args()
+
+    if args.from_csv:
+        import csv as _csv
+        with open(args.from_csv) as f:
+            r = _csv.DictReader(f)
+            symbols = [row["ticker"].strip() for row in r if row.get("ticker")]
+        symbols = list(dict.fromkeys(symbols))
+        print(f"Loaded {len(symbols)} symbols from {args.from_csv}")
+    else:
+        symbols = list(dict.fromkeys(s.strip().upper() for s in args.assets.split(",") if s.strip()))
+    if args.limit:
+        symbols = symbols[:args.limit]
 
     if args.no_cache:
         from data_io.lse_loader import clear_cache
@@ -367,21 +385,36 @@ def main():
     OUT_DIR = Path(args.output_dir)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    symbols = list(dict.fromkeys(s.strip().upper() for s in args.assets.split(",") if s.strip()))
     print(f"=== Equities risk-management pipeline ===")
-    print(f"  symbols: {len(symbols)} ({', '.join(symbols)})")
+    print(f"  symbols: {len(symbols)} ({', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''})")
     print(f"  output:  {OUT_DIR}")
     print(f"  periods/yr: {PERIODS_PER_YEAR} (trading days)")
 
     rows = []
-    for sym in symbols:
+    t_start = _time.time()
+    n_total = len(symbols)
+    for i, sym in enumerate(symbols, 1):
+        t0 = _time.time()
         try:
             r = run_one_symbol(sym, OUT_DIR)
         except Exception as e:
             print(f"  ERROR {sym}: {e}")
             r = None
+        dt = _time.time() - t0
         if r is not None:
             rows.append(r)
+        # Progress + ETA
+        done = len(rows)
+        skipped = i - done
+        elapsed = _time.time() - t_start
+        avg = elapsed / i if i else 0
+        eta = avg * (n_total - i)
+        status = "✓" if r is not None else "✗"
+        delta_s = r["headline_hmm"]["sharpe"] - r["headline_bh"]["sharpe"] if r else float("nan")
+        print(f"  [{i:>3d}/{n_total}] {status} {sym:<8s} "
+              f"{dt:>5.1f}s  Δ={delta_s:+.3f}  "
+              f"avg={avg:>5.1f}s  eta={_time.strftime('%H:%M:%S', _time.gmtime(eta))}  "
+              f"({done} ok, {skipped} skipped)")
 
     if rows:
         df = pd.DataFrame([{
