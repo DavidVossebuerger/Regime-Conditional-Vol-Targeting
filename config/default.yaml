@@ -1,0 +1,63 @@
+# Crypto risk-management pipeline — default configuration
+# Edit this file or pass --config path/to/custom.yaml to override.
+
+data:
+  data_dir: "data"                 # directory containing CSV / parquet files
+  split: 0.8                       # train/test fraction (used when test_start_date is null)
+  test_start_date: null            # e.g. "2020-01-01" — fixes test-fold start, ignoring split
+                                  # null = use `split` fraction (default for multi-asset)
+                                  # set a date for a long historical test fold (BTC deep run)
+
+pipeline:
+  periods_per_year: 8760           # 24h × 365 (crypto 24/7)
+  roll_window: 24                  # hours — daily-equivalent realized vol
+  lags: 5                          # number of lagged return/RV features
+  tc_per_side: 0.0002              # 2 bps / side (Binance spot taker fee)
+  vol_target_annual: 0.60          # 60% annualized vol budget (used as hit-metric target)
+
+rf:                                # Random Forest vol forecast
+  n_estimators: 125
+  max_depth: 24
+  max_features: "sqrt"
+  min_samples_leaf: 12
+  random_state: 42
+  n_jobs: -1
+
+hmm:                               # Gaussian HMM regime classifier
+  n_components: 3                  # K = number of regimes
+                                  #   K=2 too coarse for crypto, K=3 default, K=4 better for high-vol assets
+                                  #   K=5+ usually overfits with N=4000-5000 train samples
+  covariance_type: "diag"
+  n_iter: 200
+  implementation: "log"            # "log" uses log-domain forward to avoid underflow
+  random_state: 42
+
+# Per-state vol-target grid. position_k = clip(target_k / pred_vol, 0, 1).
+# Wider grid = more flexibility but slower (joint brute force is 9^K).
+target_grid: [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+
+walk_forward:
+  train_min: 4320        # hours — minimum HMM training window (~180 days)
+  test_size: 2160        # hours — test window (~90 days)
+  step: 2160             # hours — step between consecutive test windows
+
+worstcase:                       # thermodynamic worst-case feature (Feng 2019)
+  enabled: true          # add V_wc as 4th HMM feature
+  window: 168            # hours — rolling window for V_wc computation (~7 days)
+  eta_grid: [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]  # η values to scan during calibration
+  target_drag_pct: 0.5   # pick smallest η where |V_wc − V| / |V| ≥ this threshold
+                         # higher = more conservative (larger η selected)
+  multiplier_enabled: false  # additionally scale position by 1/V_wc (empirically over-corrects)
+
+calibration:
+  snippet_hours: 2160    # 90 days — size of random slice from train fold for η selection
+  snippet_seed: 7         # reproducible snippet selection
+
+bootstrap:                        # block bootstrap for confidence intervals
+  n_boot: 2000
+  block_size: 168        # hours — 1 week
+  seed: 42
+
+progress:
+  enabled: true
+  style: "rich"          # "rich", "tqdm", "print"
