@@ -41,17 +41,11 @@ walk_forward:
   test_size: 2160        # hours — test window (~90 days)
   step: 2160             # hours — step between consecutive test windows
 
-worstcase:                       # thermodynamic worst-case feature (Feng 2019)
-  enabled: true          # add V_wc as 4th HMM feature
-  window: 168            # hours — rolling window for V_wc computation (~7 days)
-  eta_grid: [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]  # η values to scan during calibration
-  target_drag_pct: 0.5   # pick smallest η where |V_wc − V| / |V| ≥ this threshold
-                         # higher = more conservative (larger η selected)
-  multiplier_enabled: false  # additionally scale position by 1/V_wc (empirically over-corrects)
+worstcase:                       # deprecated — feature removed in v1.1
+  enabled: false
 
-calibration:
-  snippet_hours: 2160    # 90 days — size of random slice from train fold for η selection
-  snippet_seed: 7         # reproducible snippet selection
+calibration:                    # deprecated — feature removed in v1.1
+  enabled: false
 
 bootstrap:                        # block bootstrap for confidence intervals
   n_boot: 2000

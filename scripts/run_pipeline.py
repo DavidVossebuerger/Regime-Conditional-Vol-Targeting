@@ -25,8 +25,6 @@ def parse_args():
     ap.add_argument("--data-dir", default=str(PROJECT_ROOT / "data"))
     ap.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
     ap.add_argument("--n-boot", type=int, default=2000)
-    ap.add_argument("--no-wc", action="store_true",
-                    help="Disable worst-case feature")
     return ap.parse_args()
 
 

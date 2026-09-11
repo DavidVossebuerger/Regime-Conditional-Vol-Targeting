@@ -3,18 +3,19 @@
 [![Tests](https://github.com/DavidVossebuerger/Risk-Management/actions/workflows/tests.yml/badge.svg)](https://github.com/DavidVossebuerger/Risk-Management/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Code style: standard](https://img.shields.io/badge/code%20style-py--compact-blueviolet.svg)](https://peps.python.org/pep-0008/)
 
 A regime-aware risk-management system for crypto **and** equities. Combines a
-**Random Forest vol forecast** with a **Gaussian HMM regime classifier** and a
-**thermodynamic worst-case-loss feature** (Feng 2019, [arXiv:1904.00151](https://arxiv.org/abs/1904.00151))
-to produce a soft-vol-targeted position sizing rule that **outperforms
-Buy-and-Hold on 8 of 10 crypto assets and 138 of 177 Russell 2000 components**
-with strict walk-forward validation and block-bootstrap significance.
+**Random Forest vol forecast** with a **Gaussian HMM regime classifier** to
+produce a soft-vol-targeted position sizing rule that outperforms Buy-and-Hold
+on a broad set of crypto and US-equity assets with strict walk-forward validation
+and block-bootstrap significance.
 
-> **Headline (BTC deep run, 2020-01 → 2026-09, 24 walk-forward windows):**
-> HMM wc-feat achieves **Sharpe 0.853** vs Buy-and-Hold's **0.550**, with
-> Max-DD reduced from **-148% to -69%** and **95% vol-budget compliance**.
+> **Architecture (canonical config):**
+> - **Random Forest** predicts next-period realized vol from 17 lagged features
+> - **Gaussian HMM** (K=3) classifies each bar into regime probabilities
+> - **Per-state vol-target** chosen per walk-forward window via joint brute-force
+> - **Position**: `pos(t) = Σ_k P(state=k|t) · clip(target_k / pred_vol(t+1), 0, 1)`
+> - **TC**: 2 bps/side · **Block bootstrap**: 60-day blocks · 1000–2000 iters
 
 ## TL;DR
 
@@ -22,16 +23,11 @@ with strict walk-forward validation and block-bootstrap significance.
 git clone https://github.com/DavidVossebuerger/Risk-Management.git
 cd Risk-Management
 make install
-make run-crypto           # full crypto pipeline (~30 min)
-# or
-make run-equities         # US small-caps via LSE (need LSE_API_KEY)
-make run-russell          # Russell 2000 top-200
-make test                 # 16 unit tests
+make run-crypto       # full crypto pipeline (~30 min)
+make run-equities     # US small-caps via LSE (need LSE_API_KEY)
+make run-russell      # Russell 2000 top-200 (~10 min with cache)
+make test             # 11 unit tests
 ```
->
-> **Multi-asset run (80/20 split per asset, 5 windows of 90 days each):**
-> HMM wc-feat beats Buy-and-Hold on **8 of 10** assets; only **XRP** and
-> the **stablecoin USDC** underperform (USDC has no volatility to target).
 
 ## Quick start
 
@@ -39,20 +35,18 @@ make test                 # 16 unit tests
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Verify environment (smoke-test the critical imports)
+# 2. Verify environment
 python -c "import numpy, pandas, sklearn, hmmlearn, matplotlib; print('ok')"
 
-# 3. (Optional) Live data via London Strategic Edge API (crypto + US equities)
-#    Your LSE key can live in any of: ~/.crypto_risk_pipeline.env, .env, env var.
+# 3. (Optional) Live data via London Strategic Edge API
 cp .env.example .env
 # edit .env and set LSE_API_KEY=...
-# See docs/lse_api_notes.md for what the API offers.
 
 # 4a. Crypto pipeline (hourly bars from local data/*.csv|parquet)
 python scripts/run_pipeline.py --assets BTC,ETH,ADA,BNB,DOGE,LINK,LTC,SOL,XRP
 
 # 4b. Equities pipeline (daily bars from LSE API)
-python src/equities_runner.py --assets RIOT,MARA,DKNG,LCID,RIVN,PLTR,RKT,OPEN,SOFI
+python src/equities_runner.py
 
 # 5. Run unit tests
 pytest tests/ -v
@@ -64,225 +58,134 @@ pytest tests/ -v
 |---|---|
 | **Sharpe** | annualized mean return / annualized vol of returns. Risk-adjusted return. |
 | **Sortino** | like Sharpe but only downside std in denominator. |
-| **Max DD** | maximum peak-to-trough drawdown, expressed as a positive log-return number. Smaller is better. |
-| **Calmar** | annualized return / Max DD. Reward per unit of worst-case loss. |
+| **Max DD** | maximum peak-to-trough drawdown (positive number, log-return). Smaller is better. |
+| **Calmar** | annualized return / Max DD. |
 | **B&H** | Buy-and-Hold baseline — always fully invested, no transaction costs. |
-| **P(HMM>B&H)** | block-bootstrap probability (default 1000 iterations, 1-week blocks) that HMM Sharpe ≥ B&H Sharpe. ≥0.5 means "HMM at least as good". |
+| **P(HMM>B&H)** | block-bootstrap probability (1000 iters, 60-day blocks) that HMM Sharpe ≥ B&H Sharpe. |
 | **Δ Sharpe** | HMM Sharpe minus B&H Sharpe. Positive = HMM edge. |
-| **DD Reduction** | (B&H Max DD) − (HMM Max DD). Positive = HMM has smaller drawdown. |
-| **HMM wc-feat** | the canonical config: HMM regime classifier with vol-targeting + worst-case feature. |
-| **V_wc** | thermodynamic worst-case expected return, `η⁻¹ log( mean(exp(η r)) )`. Higher = worse expected outcome under model perturbation. See `docs/papers/1904.00151.pdf`. |
-| **η (eta)** | entropic budget — controls how much "model uncertainty" we assume. Larger η → more conservative. |
-| **Walk-forward** | honest test: at each window, refit / retune on data strictly before the test slice. No future info leaks. |
-| **Block bootstrap** | confidence intervals via resampling blocks (default 168h = 1 week) instead of individual observations, which would understate uncertainty. |
+| **HMM** | canonical config: Gaussian HMM (K=3) + per-state vol-target chosen by walk-forward brute force. |
+| **Walk-forward** | honest test: at each window, refit on data strictly before the test slice. No future info leaks. |
+| **Block bootstrap** | confidence intervals via resampling blocks (default 60 days) instead of independent observations. |
 | **Vol-target** | position size that holds expected portfolio vol constant. `pos = clip(target / pred_vol, 0, 1)`. |
+| **Per-state target** | vol-target picked per HMM state. State 0 might get `target=0.10` (defensive), state 2 `target=0.40` (aggressive). |
+
+## Architecture
+
+```
+   ┌────────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────────┐
+   │  Load OHLC │ →  │ Feature     │ →  │ Train RF     │ →  │ WF Training  │
+   │  bars      │    │ Engineering │    │ vol forecast │    │ + Brute-Force│
+   └────────────┘    └─────────────┘    └──────────────┘    │ Per-State    │
+                                                                   │ Targets      │
+                                                                   ▼
+   ┌─────────────┐   ┌──────────────────┐   ┌────────────────┐
+   │  Bootstrap   │ ← │  Position Sizing  │ ← │  Walk-Forward  │
+   │  CIs + plots │   │  + TC             │   │  HMM K=3       │
+   └─────────────┘   └──────────────────┘   └────────────────┘
+```
+
+### Position sizing (per bar)
+```
+pred_vol(t+1)  = RF prediction of next-bar realized vol
+state_k(t)     = HMM posterior probability of regime k
+target_k       = per-state vol-target (chosen in WF training by joint brute-force)
+soft_pos_k(t)  = clip(target_k / pred_vol(t+1), 0, 1)
+position(t)    = Σ_k state_k(t) · soft_pos_k(t)   # convex mixture
+```
+
+### What each component does
+| Component | Learns | Fit cadence |
+|---|---|---|
+| Random Forest | next-period RV from 17 lagged features | once per asset |
+| Gaussian HMM (K=3) | regime probabilities (calm / neutral / stress) | once per WF window |
+| Per-state target | vol-target per regime | once per WF window |
 
 ## Project layout
 
 ```
 .
-├── README.md                       # this file
+├── README.md
 ├── LICENSE                         # MIT
 ├── requirements.txt
+├── pyproject.toml
+├── Makefile                        # make install / test / run-* / clean
 ├── .gitignore
 │
 ├── config/
 │   └── default.yaml                # all knobs in one place
 │
-├── data/                           # input OHLC bars (CSV / parquet, hourly)
+├── data/                           # input OHLC bars (gitignored, README.md only)
 │   ├── crypto_BTC_USD_1m*.parquet
 │   ├── crypto_ETH_USD_1m*.parquet
-│   ├── *_usd_1h.csv                # ADA, BNB, DOGE, LINK, LTC, SHIB, SOL, XRP, …
-│   └── …stablecoins/               # USDC, FDUSD (sanity check assets)
+│   ├── *_usd_1h.csv                # altcoins + stablecoins
+│   └── cache/                      # LSE API response cache
 │
 ├── src/
-│   ├── __init__.py
-│   ├── multi_asset_runner.py       # entry point: walk-forward + bootstrap
-│   ├── risk_pipeline_worstcase.py  # canonical BTC pipeline incl. V_wc
-│   ├── risk_pipeline_hourly.py     # BTC-only baseline without worstcase
-│   ├── risk_strategy/              # HMM, soft-weight, vol-targeting strategies
+│   ├── multi_asset_runner.py       # crypto pipeline (hourly, 10 assets)
+│   ├── equities_runner.py         # equities pipeline (daily via LSE)
+│   ├── risk_strategy/              # extensible strategies
 │   ├── diagnostics/                # residual scatter, Q-Q, year breakdowns
-│   ├── data_io/                    # asset loaders (parquet + CSV)
-│   └── utils/                      # metrics, config loader, progress bar
+│   ├── data_io/                    # asset loaders (parquet + CSV + LSE)
+│   └── utils/                      # metrics, config loader
 │
 ├── scripts/
-│   └── run_pipeline.py             # CLI entrypoint with rich progress + ETA
+│   └── run_pipeline.py             # CLI entrypoint with progress + ETA
 │
 ├── outputs/                        # generated plots + CSVs (gitignored)
-│   ├── btc_hourly/
-│   ├── btc_worstcase/
-│   └── multi_asset/
 │
 ├── docs/
-│   ├── README-results.md           # full results report (latest run)
-│   ├── xrp_failure_analysis.md     # why XRP underperforms (generated)
+│   ├── architecture.md             # pipeline diagram + responsibilities
+│   ├── README-results.md           # full results report
+│   ├── equities-results.md         # US small-cap equities headline
+│   ├── russell2000-results.md      # Russell 2000 top-200 headline
 │   ├── lse_api_notes.md            # London Strategic Edge API notes
-│   └── papers/
-│       └── 1904.00151.pdf          # Feng 2019 — thermodynamic worst-case
+│   ├── ux_review.md                # dummy-user UX review
+│   └── adding_new_assets.md        # extension guide
 │
+├── tests/                          # 11 unit tests
 └── .bak/                           # legacy / superseded scripts
-    ├── scripts_legacy/             # earlier iteration of HMM strategies
-    ├── lib_legacy/                 # XAU-only VolatilityBacktester class
-    ├── results_legacy/             # outputs from earlier exploration
-    ├── legacy_xau_daily/           # original XAU volatility project
-    ├── legacy_risiko_optimierung/  # original Risiko-Optimierung folder
-    ├── repo_prune_backup/          # pre-prune backup of repo
-    ├── btc_csv_duplicates/         # redundant 1m CSVs (kept, parquets are canonical)
-    └── *.zip                       # deployment zips
 ```
-
-## Architecture
-
-### Pipeline (per asset)
-
-```
-   ┌────────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────────┐
-   │  Load OHLC │ →  │ Feature     │ →  │ Train RF     │ →  │ Calibrate η  │
-   │  1h bars   │    │ Engineering │    │ vol forecast │    │ on snippet   │
-   └────────────┘    └─────────────┘    └──────────────┘    └──────┬───────┘
-                                                                   │
-                                                                   ▼
-   ┌─────────────┐   ┌──────────────────┐   ┌────────────────┐   ┌─────────┐
-   │  Bootstrap   │ ← │  Build V_wc       │ ← │  Walk-Forward  │ ← │ Pick η  │
-   │  CIs + plots │   │  rolling 168h     │   │  HMM K=3       │   │         │
-   └─────────────┘   └──────────────────┘   └────────────────┘   └─────────┘
-```
-
-### Position sizing (per hour)
-
-```
-pred_vol(t+1)         = RF prediction of next-bar realized vol
-V_wc(t, η=4.0)        = worst-case expected return under entropic budget
-                        (Cramér-Lundberg dual of exp(η r))
-state_k(t)            = HMM posterior probability of regime k
-target_k              = per-state vol-target chosen by walk-forward training
-
-soft_pos_k(t)         = clip(target_k / pred_vol(t+1), 0, 1)
-position(t)           = Σ_k state_k(t) · soft_pos_k(t)        # convex mixture
-```
-
-Multiplicative risk-scaler (`1 / V_wc`) is available but **not used in the
-canonical config** — empirically it over-corrects on top of the HMM vol-target
-(see `docs/xrp_failure_analysis.md`).
-
-### Why the HMM + worst-case combo works
-
-- **Random Forest** captures the **vol-level** (linear in lagged RV features).
-- **HMM** captures the **regime** (high-vol-persistent vs low-vol-reverting)
-  using rolling vol-of-vol and z-scores.
-- **Worst-case feature** (Cramér-Lundberg dual) captures the **tail-risk**
-  separately from the vol-level. This is what distinguishes "low vol because
-  the market is calm" from "low vol because everyone is hedging" — the latter
-  has heavier tails.
 
 ## Reproducing the results
 
-There are three valid configurations. Pick based on what you want to test:
-
-### Run 1: BTC deep walk-forward (24 windows over 6 years)
-
-Uses a **fixed date cutoff** (`config/default.yaml` → `data.test_start_date = "2020-01-01"`)
-so the test fold spans the full 2020 → 2026 crypto cycle (COVID, bull, crash, ETF, ATH).
-This is the headline-run config that produces **BTC Sharpe 0.853 vs 0.550**.
-
 ```bash
-# Edit config/default.yaml: set data.test_start_date: "2020-01-01"
-python scripts/run_pipeline.py --assets BTC --n-boot 2000
-```
-
-### Run 2: Crypto multi-asset comparison (5 windows of 90 days each)
-
-Uses **80/20 split per asset**, so each asset gets a test fold proportional to its
-history length. Useful for cross-asset comparison but each individual asset has
-fewer walk-forward windows → wider bootstrap CIs.
-
-```bash
-# Leave data.test_start_date: null in config/default.yaml
+# Crypto multi-asset (80/20 split per asset, ~5 WF windows each)
 python scripts/run_pipeline.py --assets BTC,ETH,ADA,BNB,DOGE,LINK,LTC,SOL,XRP
-```
 
-### Run 3: US small-cap equities (daily bars via LSE API)
-
-Same HMM wc-feat pipeline, adapted for daily bars (`periods_per_year=252`).
-The LSE loader (`src/data_io/lse_loader.py`) fetches bars and caches them in
-`data/cache/`. **7 of 9 hand-picked small caps beat Buy-and-Hold; 138 of 177
-Russell 2000 components (78%) beat Buy-and-Hold.** See
-`docs/equities-results.md` and `docs/russell2000-results.md`.
-
-```bash
-# 1) Set your key (one-time)
-cp .env.example .env  # then edit .env to set LSE_API_KEY=...
-# 2) Run hand-picked basket
+# US small-cap equities (daily bars via LSE)
 python src/equities_runner.py
-# 3) Or run Russell 2000 top-200 (provided CSV)
+
+# Russell 2000 top-200 (provided CSV)
 python src/equities_runner.py --from-csv data/russell2000_top200.csv \
     --output-dir outputs/russell2000_top200 --n-boot 500
 ```
 
-### Multi-asset expected output (Run 2)
-
-Approximate, due to RF + HMM stochasticity:
-
-| Asset | B&H Sharpe | HMM Sharpe | Max DD B&H | Max DD HMM |
-|---|---|---|---|---|
-| SOL  | -0.51 | +2.55 | -89% | -22% |
-| DOGE | -1.58 | +0.26 | -137% | -49% |
-| ETH  | -0.06 | +1.60 | -118% | -38% |
-| LTC  | -0.72 | +0.90 | -122% | -43% |
-| ADA  | -1.18 | +0.22 | -199% | -62% |
-| BNB  | +0.11 | +1.46 | -93% | -27% |
-| LINK | -1.07 | +0.14 | -130% | -39% |
-| BTC  | -0.61 | -0.42 | -77% | -56% |
-| XRP  | -0.67 | -0.85 | -131% | -88% |
-| USDC | +0.11 | +0.11 | -0.4% | -0.4% |
+Per-asset PNG plots + per-window CSVs + summary JSON land in `outputs/<ASSET>/`.
 
 ## Known limitations
 
-1. **XRP underperforms** with default config — see `docs/xrp_failure_analysis.md`.
-   The system isn't broken, it's mis-tuned for XRP:
-   - **Tier-1 fix:** `η=4.0` (instead of 1.0) + `K=4` (instead of 3) lifts Sharpe
-     from −0.85 → −0.01 (parity with BTC tier). Add XRP-ETH rolling correlation
-     as a 5th HMM feature → Sharpe −0.85 → −0.57, Max-DD −88% → −75%.
-   - **Structural cause:** XRP's vol-of-vol is 33% higher than BTC (median 0.67 vs 0.50,
-     p95 1.91 vs 1.33). Jump-driven idiosyncratic news shocks (SEC rulings,
-     delistings) make regime transitions harder to resolve with default K=3.
-   - For production: drop XRP from the HMM vol-targeting sleeve unless
-     Tier-1 fixes are applied.
-2. **BTC only marginal edge** — BTC's mean-reverting vol structure + 24/7
-   liquidity leaves less room for the HMM to add edge vs Buy-and-Hold.
-   ~Sharpe +0.19 in the multi-asset run is real but small.
-3. **Single-snippet η calibration** — picked randomly from train fold.
-   Multi-snippet averaging would be more robust.
-4. **No external data integration** — only OHLC. Sentiment / order-book /
-   on-chain signals would likely help. The LSE API integration (see
-   `docs/lse_api_notes.md`) is the price-tape layer; sentiment/on-chain
-   would need additional vendors.
-5. **Bootstrap CI wide** — block-bootstrap on 168h blocks gives ~30 effective
-   independent samples for a 5-year test fold. Confidence intervals are honest
-   but conservative.
-2. **BTC only marginal** — BTC's mean-reverting vol structure + 24/7 liquidity leaves
-   less room for the HMM to add edge vs Buy-and-Hold. ~Sharpe +0.2 is real but small.
-3. **Single-snippet η calibration** — picked randomly from train fold. Multi-snippet
-   averaging would be more robust.
-4. **No external data integration** — only OHLC. Sentiment / order-book / on-chain
-   signals would likely help (LSE integration is the price-tape layer).
-5. **Bootstrap CI wide** — block-bootstrap on 168h blocks gives ~30 effective
-   independent samples for 5.8-year test fold. Confidence intervals are honest
-   but conservative.
+1. **BTC only marginal edge** — BTC's mean-reverting vol + 24/7 liquidity leaves less room for HMM to add value vs Buy-and-Hold.
+2. **XRP underperforms with default config** — see `docs/russell2000-results.md`.
+   XRP's vol-of-vol is structurally higher (33% above BTC).
+3. **Single-asset test folds vary in length** — bootstrap CIs are wider for short-history assets.
+4. **Block-bootstrap on 60-day blocks gives ~30 effective independent samples**
+   for a 5-year test fold. CIs are honest but conservative.
+5. **No external data integration** — only OHLC. Sentiment / order-book / on-chain
+   signals would likely help. The LSE API integration (see `docs/lse_api_notes.md`)
+   is the price-tape layer.
 
 ## Tests
 
 ```bash
-pytest tests/                  # unit tests for metrics, position-sizing, V_wc
+pytest tests/ -v           # 11 unit tests (metrics, position sizing, lookahead audit)
+make test                  # same, via Makefile
 ```
 
 ## References
 
-- Feng, Y. (2019). *A Thermodynamic Picture of Financial Market and Model Risk*.
-  arXiv:1904.00151. Used for the worst-case expected return feature.
-- Hansen, L.P. & Sargent, T.J. (2008). *Robustness*. Princeton University Press.
-  Foundation for the entropic budget interpretation.
-- London Strategic Edge API docs: https://londonstrategicedge.com/api-documentation/
+- [London Strategic Edge API docs](https://londonstrategicedge.com/api-documentation/)
+- [hmmlearn](https://hmmlearn.readthedocs.io/) — Gaussian HMM implementation
+- [scikit-learn RandomForestRegressor](https://scikit-learn.org/)
 
 ## License
 

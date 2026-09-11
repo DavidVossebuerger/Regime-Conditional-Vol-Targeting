@@ -63,8 +63,7 @@ Where `myasset.yaml` overrides any subset of `default.yaml`:
 ```yaml
 target_grid: [0.30, 0.40, 0.50, 0.60, 0.70, 0.80]   # narrower range
 worstcase:
-  enabled: true
-  eta_grid: [0.25, 0.5, 1.0, 2.0, 4.0]            # smaller search
+  enabled: false                              # default false
 walk_forward:
   test_size: 1440                                  # smaller windows for less data
 ```

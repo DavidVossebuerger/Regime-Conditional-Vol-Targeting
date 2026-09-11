@@ -1,13 +1,12 @@
 """Equity pipeline (daily bars via London Strategic Edge).
 
 Mirrors multi_asset_runner.py but uses DAILY bars for equities (US stocks
-trade ~6.5h/day, so daily is the right granularity). Reuses the same
-HMM wc-feat strategy.
+trade ~6.5h/day, so daily is the right granularity).
 
 Differences vs crypto runner:
 - periods_per_year = 252 (trading days)
 - roll_window = 20 (days) for daily-equivalent realized vol
-- walk-forward: train_min=504 (~2y), test_size=126 (~6mo), step=126
+- walk-forward: train_min=504 (~2y), test_size=126 (~6mo), step=126 (adaptive)
 - bootstrap block_size = 60 (trading days ≈ 3 months)
 """
 from __future__ import annotations
@@ -40,12 +39,8 @@ TARGET_GRID = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
 WF_TRAIN_MIN = 504
 WF_TEST_SIZE = 126
 WF_STEP = 126
-WC_WINDOW = 60                  # 60 trading days ≈ 3 months
 EPS = 1e-3
-ETA_GRID = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
 SPLIT = 0.8
-CAL_SNIPPET_DAYS = 90
-CAL_SEED = 7
 N_BOOT = 1000
 BLOCK_SIZE = 60
 TC_PER_SIDE = 0.0002              # 2 bps / side (retail equity)
@@ -106,18 +101,6 @@ def sharpe_rank(r):
     return float(r.mean() / r.std(ddof=1))
 
 
-def v_wc(logret, eta):
-    z = np.log(np.mean(np.exp(eta * logret)))
-    return float(z / eta)
-
-
-def wc_series(logret, eta, window):
-    out = np.full(len(logret), np.nan)
-    for i in range(window, len(logret)):
-        out[i] = v_wc(logret[i - window:i], eta)
-    return out
-
-
 def select_per_state_targets(tr_probs, train_logret, train_pred):
     K = tr_probs.shape[1]
     per_target_pos = {tg: soft_position(tg, train_pred) for tg in TARGET_GRID}
@@ -172,27 +155,7 @@ def run_one_symbol(symbol: str, OUT_DIR: Path):
     pred_arr = pred.values
     log_ret_arr = log_ret_full.reindex(test_idx).fillna(0).values
 
-    # Calibration
-    rng = np.random.default_rng(CAL_SEED)
-    max_start = len(train) - CAL_SNIPPET_DAYS - 1
-    if max_start <= 0:
-        chosen_eta = ETA_GRID[-1]
-    else:
-        cal_start = int(rng.integers(0, max_start))
-        cal_logret = train["log_return"].iloc[cal_start:cal_start + CAL_SNIPPET_DAYS].values
-        meanL = float(np.mean(cal_logret))
-        chosen_eta = ETA_GRID[-1]
-        for eta in ETA_GRID:
-            wc = v_wc(cal_logret, eta)
-            drag = abs(wc - meanL) / max(abs(meanL), 1e-6)
-            if drag >= 0.5:
-                chosen_eta = eta
-                break
-    print(f"  η_calibration={chosen_eta}")
-
-    wc_full = wc_series(log_ret_arr, chosen_eta, WC_WINDOW)
-    wc_test = pd.Series(wc_full, index=test_idx).shift(1).fillna(0.0).values
-
+    # HMM features (lagged vol statistics; no future info)
     rv_realized = (log_ret_full * np.sqrt(PERIODS_PER_YEAR)).reindex(test_idx).fillna(0).values
     rv_lag1 = pd.Series(rv_realized).shift(1).fillna(0.0).values
     vol_zscore = pd.Series(rv_lag1).rolling(60).apply(
@@ -201,7 +164,7 @@ def run_one_symbol(symbol: str, OUT_DIR: Path):
     vol_of_vol = pd.Series(rv_lag1).rolling(20).std().fillna(0.0).values
     vol_return = np.concatenate([[0.0], np.diff(rv_lag1)])
 
-    hmm_X = np.column_stack([vol_zscore, vol_of_vol, vol_return, wc_test])
+    hmm_X = np.column_stack([vol_zscore, vol_of_vol, vol_return])
     hmm_X = np.nan_to_num(hmm_X, nan=0.0, posinf=0.0, neginf=0.0)
     mu = hmm_X.mean(axis=0); sd = hmm_X.std(axis=0) + 1e-12
     hmm_X_std = (hmm_X - mu) / sd
@@ -303,7 +266,7 @@ def run_one_symbol(symbol: str, OUT_DIR: Path):
     out = {
         "symbol": symbol, "n_test_bars": int(N_TEST),
         "covered_bars": int(covered.sum()), "n_windows": len(windows),
-        "cal_eta": chosen_eta,
+        
         "headline_bh": m_bh, "headline_hmm": m_blend,
         "p_hmm_beats_bh": p_beats,
         "yearly": df_yearly,
@@ -321,13 +284,13 @@ def run_one_symbol(symbol: str, OUT_DIR: Path):
     fig, axes = plt.subplots(3, 1, figsize=(11, 10), sharex=True,
                               gridspec_kw={"height_ratios": [3, 2, 2]})
     ax = axes[0]
-    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM wc-feat", blend_r, "tab:red")]:
+    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM", blend_r, "tab:red")]:
         cs = np.where(np.isnan(r), 0.0, np.where(np.isfinite(r), r, 0.0))
         eq = np.exp(np.cumsum(cs))
         eq = np.where(np.isnan(r), np.nan, eq)
         ax.plot(test_idx, eq, lw=0.9, color=c, label=label)
     ax.set_ylabel("Equity (start=1)")
-    ax.set_title(f"{symbol} (equity, daily) HMM wc-feat vs B&H (η={chosen_eta})\n"
+    ax.set_title(f"{symbol} (equity, daily) HMM vs B&H (K=3 HMM)\n"
                  f"sharpe_bh={m_bh['sharpe']:.2f}, hmm={m_blend['sharpe']:.2f}, "
                  f"P(hmm≥bh)={p_beats:.2f}")
     ax.legend(); ax.grid(alpha=0.3)
@@ -419,7 +382,7 @@ def main():
     if rows:
         df = pd.DataFrame([{
             "symbol": r["symbol"], "n_test_bars": r["n_test_bars"],
-            "n_windows": r["n_windows"], "cal_eta": r["cal_eta"],
+            "n_windows": r["n_windows"],
             "bh_sharpe": r["headline_bh"]["sharpe"],
             "hmm_sharpe": r["headline_hmm"]["sharpe"],
             "sharpe_delta": r["headline_hmm"]["sharpe"] - r["headline_bh"]["sharpe"],
@@ -438,7 +401,7 @@ def main():
         ax = axes[0]
         xs = np.arange(len(df)); w = 0.4
         ax.bar(xs - w/2, df["bh_sharpe"], w, color="tab:blue", label="B&H")
-        ax.bar(xs + w/2, df["hmm_sharpe"], w, color="tab:red", label="HMM wc-feat")
+        ax.bar(xs + w/2, df["hmm_sharpe"], w, color="tab:red", label="HMM")
         ax.axhline(0, color="k", lw=0.5)
         ax.set_xticks(xs); ax.set_xticklabels(df["symbol"], rotation=45, ha="right")
         ax.set_ylabel("Sharpe"); ax.set_title("Sharpe — US Small-Cap Equities (daily)")
@@ -450,7 +413,7 @@ def main():
         ax.axhline(0, color="k", lw=1)
         ax.set_xticks(xs); ax.set_xticklabels(df["symbol"], rotation=45, ha="right")
         ax.set_ylabel("Sharpe Δ (HMM - B&H)")
-        ax.set_title("Where HMM wc-feat beats B&H on equities")
+        ax.set_title("Where HMM beats B&H on equities")
         ax.grid(alpha=0.3, axis="y")
         fig.tight_layout()
         fig.savefig(OUT_DIR / "cross_asset.png", dpi=110)

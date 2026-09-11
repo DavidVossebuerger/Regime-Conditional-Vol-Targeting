@@ -1,10 +1,10 @@
-"""Multi-asset risk-modul validation: HMM wc-feat vs B&H across all available crypto.
+"""Multi-asset risk-modul validation: HMM vs B&H across all available crypto.
 
 For each asset:
   - load 1h bars (parquet for BTC/ETH, CSV for alts)
   - 80/20 train/test split
   - 90-day random calibration snippet from train fold only
-  - Walk-forward HMM wc-feat (24 windows default)
+  - Walk-forward HMM (24 windows default)
   - Bootstrap CI (N=1000 for speed across many assets)
   - Per-asset PNGs + summary
 
@@ -48,12 +48,8 @@ TARGET_GRID = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
 WF_TRAIN_MIN = 4320       # 180 days
 WF_TEST_SIZE = 2160       # 90 days
 WF_STEP = 2160
-WC_WINDOW = 168
 EPS = 1e-3
-ETA_GRID = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
 SPLIT = 0.8
-CAL_SNIPPET_HOURS = 90 * 24
-CAL_SEED = 7
 N_BOOT = 1000
 BLOCK_SIZE = 168
 
@@ -159,18 +155,6 @@ def sharpe_rank(r):
     return float(r.mean() / r.std(ddof=1))
 
 
-def v_wc(logret, eta):
-    z = np.log(np.mean(np.exp(eta * logret)))
-    return float(z / eta)
-
-
-def wc_series(logret, eta, window):
-    out = np.full(len(logret), np.nan)
-    for i in range(window, len(logret)):
-        out[i] = v_wc(logret[i - window:i], eta)
-    return out
-
-
 def select_per_state_targets(tr_probs, train_logret, train_pred):
     K = tr_probs.shape[1]
     per_target_pos = {tg: soft_position(tg, train_pred) for tg in TARGET_GRID}
@@ -223,24 +207,7 @@ def run_one_asset(name: str, close: pd.Series):
     pred_arr = pred.values
     log_ret_arr = log_ret_full.reindex(test_idx).fillna(0).values
 
-    # Calibration
-    rng = np.random.default_rng(CAL_SEED)
-    max_start = len(train) - CAL_SNIPPET_HOURS - 1
-    cal_start = int(rng.integers(0, max_start))
-    cal_logret = train["log_return"].iloc[cal_start:cal_start + CAL_SNIPPET_HOURS].values
-    meanL = float(np.mean(cal_logret))
-    chosen_eta = ETA_GRID[-1]
-    for eta in ETA_GRID:
-        wc = v_wc(cal_logret, eta)
-        drag = abs(wc - meanL) / max(abs(meanL), 1e-6)
-        if drag >= 0.5:
-            chosen_eta = eta
-            break
-    print(f"  train={len(train)}, test={N_TEST} bars  cal_start=iloc[{cal_start}]  η={chosen_eta}")
-
-    wc_full = wc_series(log_ret_arr, chosen_eta, WC_WINDOW)
-    wc_test = pd.Series(wc_full, index=test_idx).shift(1).fillna(0.0).values
-
+    # HMM features (lagged vol statistics; no future info)
     rv_realized = (log_ret_full * np.sqrt(PERIODS_PER_YEAR)).reindex(test_idx).fillna(0).values
     rv_lag1 = pd.Series(rv_realized).shift(1).fillna(0.0).values
     vol_zscore = pd.Series(rv_lag1).rolling(168).apply(
@@ -249,7 +216,7 @@ def run_one_asset(name: str, close: pd.Series):
     vol_of_vol = pd.Series(rv_lag1).rolling(72).std().fillna(0.0).values
     vol_return = np.concatenate([[0.0], np.diff(rv_lag1)])
 
-    cols = [vol_zscore, vol_of_vol, vol_return, wc_test]
+    cols = [vol_zscore, vol_of_vol, vol_return]
     hmm_X = np.column_stack(cols)
     hmm_X = np.nan_to_num(hmm_X, nan=0.0, posinf=0.0, neginf=0.0)
     mu = hmm_X.mean(axis=0); sd = hmm_X.std(axis=0) + 1e-12
@@ -354,7 +321,7 @@ def run_one_asset(name: str, close: pd.Series):
         "n_test_bars": int(N_TEST),
         "covered_bars": int(covered.sum()),
         "n_windows": len(windows),
-        "cal_eta": chosen_eta,
+        "cal_eta": None,  # legacy field
         "headline_bh": m_bh,
         "headline_hmm": m_blend,
         "sharpe_bh_bootstrap_mean": float(np.mean(boots_bh)),
@@ -381,26 +348,26 @@ def run_one_asset(name: str, close: pd.Series):
                               gridspec_kw={"height_ratios": [3, 2, 2]})
     ax = axes[0]
     for label, r, c in [("B&H", bh_r, "tab:blue"),
-                          ("HMM wc-feat", blend_r, "tab:red")]:
+                          ("HMM", blend_r, "tab:red")]:
         cs = np.where(np.isnan(r), 0.0, np.where(np.isfinite(r), r, 0.0))
         eq = np.exp(np.cumsum(cs))
         eq = np.where(np.isnan(r), np.nan, eq)
         ax.plot(test_idx, eq, lw=0.9, color=c, label=label)
     ax.set_ylabel("Equity (start=1)")
-    ax.set_title(f"{name} 1h Risk-Modul: B&H vs HMM wc-feat (η={chosen_eta})\n"
+    ax.set_title(f"{name} 1h Risk-Modul: B&H vs HMM (K=3 HMM)\n"
                  f"sharpe_bh={m_bh['sharpe']:.2f}, hmm={m_blend['sharpe']:.2f}, "
                  f"P(hmm≥bh)={p_beats:.2f}")
     ax.legend(); ax.grid(alpha=0.3)
 
     ax = axes[1]
-    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM wc-feat", blend_r, "tab:red")]:
+    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM", blend_r, "tab:red")]:
         rv = pd.Series(r).rolling(24).std(ddof=1).fillna(0) * np.sqrt(PERIODS_PER_YEAR)
         ax.plot(test_idx, rv, lw=0.8, color=c, label=label)
     ax.axhline(0.6, color="k", lw=1, ls="--", label="Vol-Target 60%")
     ax.set_ylabel("Rolling 24h ann. Vol"); ax.legend(loc="upper left", fontsize=8); ax.grid(alpha=0.3)
 
     ax = axes[2]
-    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM wc-feat", blend_r, "tab:red")]:
+    for label, r, c in [("B&H", bh_r, "tab:blue"), ("HMM", blend_r, "tab:red")]:
         cs = np.cumsum(pd.Series(r).fillna(0))
         peak = np.maximum.accumulate(cs)
         dd = cs - peak
@@ -459,7 +426,7 @@ for o in all_results:
         "asset": o["asset"],
         "n_test_bars": o["n_test_bars"],
         "n_windows": o["n_windows"],
-        "cal_eta": o["cal_eta"],
+        "cal_eta": o["cal_eta"],  # legacy field
         "bh_sharpe": bh["sharpe"], "hmm_sharpe": hmm["sharpe"],
         "sharpe_delta": hmm["sharpe"] - bh["sharpe"],
         "bh_max_dd": bh["max_dd"], "hmm_max_dd": hmm["max_dd"],
@@ -478,7 +445,7 @@ ax = axes[0, 0]
 xs = np.arange(len(summary))
 w = 0.4
 ax.bar(xs - w/2, summary["bh_sharpe"], w, color="tab:blue", label="B&H")
-ax.bar(xs + w/2, summary["hmm_sharpe"], w, color="tab:red", label="HMM wc-feat")
+ax.bar(xs + w/2, summary["hmm_sharpe"], w, color="tab:red", label="HMM")
 ax.axhline(0, color="k", lw=0.5)
 ax.set_xticks(xs); ax.set_xticklabels(summary["asset"], rotation=45, ha="right")
 ax.set_ylabel("Sharpe"); ax.set_title("Sharpe per asset")
@@ -486,7 +453,7 @@ ax.legend(); ax.grid(alpha=0.3, axis="y")
 
 ax = axes[0, 1]
 ax.bar(xs - w/2, summary["bh_max_dd"], w, color="tab:blue", label="B&H")
-ax.bar(xs + w/2, summary["hmm_max_dd"], w, color="tab:red", label="HMM wc-feat")
+ax.bar(xs + w/2, summary["hmm_max_dd"], w, color="tab:red", label="HMM")
 ax.set_xticks(xs); ax.set_xticklabels(summary["asset"], rotation=45, ha="right")
 ax.set_ylabel("Max Drawdown (log, less negative = better)")
 ax.set_title("Max DD per asset"); ax.legend(); ax.grid(alpha=0.3, axis="y")

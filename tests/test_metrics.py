@@ -1,4 +1,4 @@
-"""Tests for the metrics and V_wc primitives."""
+"""Tests for the metrics primitives."""
 import numpy as np
 import pytest
 import sys
