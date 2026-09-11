@@ -1,0 +1,27 @@
+# AI Disclosure
+
+## Concept
+
+The overall **risk-management concept** — using a Random Forest vol forecast
+plus a Gaussian HMM regime classifier plus per-state vol-targeting for
+position sizing, validated with walk-forward and block-bootstrap — was conceived
+and directed by the project owner.
+
+## Implementation
+
+The implementation (Python code, test suite, documentation, and pipeline
+infrastructure) was developed with AI assistance. AI helped with:
+- Initial scaffolding of the HMM + RF + per-state-target pipeline
+- Iterative debugging and bug-fixing (notably the look-ahead bias and
+  lookahead-via-vol-feature issues in earlier iterations)
+- Statistical-significance analysis (t-test, Wilcoxon, binomial,
+  Cohen's d)
+- Documentation drafting and cross-checking
+
+The project owner reviewed, directed, and made final decisions on:
+- Pipeline architecture and config defaults
+- Statistical-significance thresholds and what constitutes "honest" reporting
+- What features to keep or remove (notably: removal of the Feng 2019
+  worst-case feature after it provided no measurable benefit)
+- Asset-class-specific transaction-cost assumptions
+- Scope of multi-asset and Russell 2000 tests

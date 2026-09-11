@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rcvt"
+version = "1.1.0"
+description = "Regime-Conditional Vol-Targeting: walk-forward HMM regime + RF vol forecast + per-state vol-targeting for crypto and equities"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "David Vossebürger"}
+]
+keywords = [
+    "regime-detection",
+    "volatility-targeting",
+    "hidden-markov-models",
+    "random-forest",
+    "walk-forward",
+    "quantitative-finance",
+    "cryptocurrency",
+    "small-cap-equities",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+"Source code" = "https://github.com/DavidVossebuerger/Regime-Conditional-Vol-Targeting"
+"Issues" = "https://github.com/DavidVossebuerger/Regime-Conditional-Vol-Targeting/issues"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-ra"
