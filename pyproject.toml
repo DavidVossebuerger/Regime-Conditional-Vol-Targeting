@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-risk-management"
+version = "1.0.0"
+description = "Regime-aware risk-management pipeline (HMM + vol forecast + thermodynamic worst-case) for crypto and equities"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Risk-Pipeline"}
+]
+keywords = [
+    "risk-management",
+    "volatility-forecasting",
+    "hidden-markov-models",
+    "quantitative-finance",
+    "cryptocurrency",
+    "small-cap-equities",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+"Source code" = "https://github.com/DavidVossebuerger/Risk-Management"
+"Issues" = "https://github.com/DavidVossebuerger/Risk-Management/issues"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-ra"

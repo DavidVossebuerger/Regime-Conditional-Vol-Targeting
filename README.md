@@ -1,17 +1,33 @@
 # Crypto Risk-Management Pipeline
 
-A regime-aware risk-management system for crypto portfolios. Combines a
+[![Tests](https://github.com/DavidVossebuerger/Risk-Management/actions/workflows/tests.yml/badge.svg)](https://github.com/DavidVossebuerger/Risk-Management/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: standard](https://img.shields.io/badge/code%20style-py--compact-blueviolet.svg)](https://peps.python.org/pep-0008/)
+
+A regime-aware risk-management system for crypto **and** equities. Combines a
 **Random Forest vol forecast** with a **Gaussian HMM regime classifier** and a
 **thermodynamic worst-case-loss feature** (Feng 2019, [arXiv:1904.00151](https://arxiv.org/abs/1904.00151))
 to produce a soft-vol-targeted position sizing rule that **outperforms
-Buy-and-Hold on 8 of 10 tested crypto assets** with strict walk-forward
-validation and block-bootstrap significance.
+Buy-and-Hold on 8 of 10 crypto assets and 138 of 177 Russell 2000 components**
+with strict walk-forward validation and block-bootstrap significance.
 
-> **Headline result (BTC deep run, 2020-01 → 2026-09, 24 walk-forward windows,
-> 180-day test / 180-day step):** HMM wc-feat achieves **Sharpe 0.853** vs
-> Buy-and-Hold's **0.550**, with Max-DD reduced from **-148% to -69%** and
-> **95% vol-budget compliance**. Bootstrap 95% CI for HMM Sharpe is the only
-> one with a strictly positive lower bound.
+> **Headline (BTC deep run, 2020-01 → 2026-09, 24 walk-forward windows):**
+> HMM wc-feat achieves **Sharpe 0.853** vs Buy-and-Hold's **0.550**, with
+> Max-DD reduced from **-148% to -69%** and **95% vol-budget compliance**.
+
+## TL;DR
+
+```bash
+git clone https://github.com/DavidVossebuerger/Risk-Management.git
+cd Risk-Management
+make install
+make run-crypto           # full crypto pipeline (~30 min)
+# or
+make run-equities         # US small-caps via LSE (need LSE_API_KEY)
+make run-russell          # Russell 2000 top-200
+make test                 # 16 unit tests
+```
 >
 > **Multi-asset run (80/20 split per asset, 5 windows of 90 days each):**
 > HMM wc-feat beats Buy-and-Hold on **8 of 10** assets; only **XRP** and
