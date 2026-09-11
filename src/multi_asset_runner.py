@@ -34,7 +34,7 @@ from sklearn.ensemble import RandomForestRegressor
 warnings.filterwarnings("ignore")
 
 DATA_DIR = Path("/home/davidv/Dokumente/Risikooptimierung/data")
-OUT_DIR = Path("results_smoke/multi_asset")
+OUT_DIR = Path("outputs/multi_asset")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Pipeline config (consistent with the BTC script)
